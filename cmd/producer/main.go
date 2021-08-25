@@ -12,21 +12,16 @@ func main() {
 	producer := NewKafkaProducer()
 	Publish("message", "test", producer, nil, deliveryChannel)
 
-	event := <-deliveryChannel
-	msg := event.(*kafka.Message)
-
-	if msg.TopicPartition.Error != nil {
-		fmt.Println("Error sending the message")
-	} else {
-		fmt.Println("Message sent:", msg.TopicPartition)
-	}
-
+	go DeliveryReport(deliveryChannel)
 	producer.Flush(1000)
 }
 
 func NewKafkaProducer() *kafka.Producer {
 	configMap := &kafka.ConfigMap{
-		"bootstrap.servers": "go-kafka_kafka:9092",
+		"bootstrap.servers":   "go-kafka_kafka:9092",
+		"delivery.timeout.ms": "0",
+		"acks":                "all",
+		"enable.idempotence":  "true",
 	}
 
 	p, err := kafka.NewProducer(configMap)
@@ -50,4 +45,19 @@ func Publish(msg string, topic string, producer *kafka.Producer, key []byte, del
 	}
 
 	return nil
+}
+
+func DeliveryReport(deliveryChannel chan kafka.Event) {
+	for event := range deliveryChannel {
+		switch ev := event.(type) {
+		case *kafka.Message:
+			if ev.TopicPartition.Error != nil {
+				fmt.Println("Error sending the message")
+			} else {
+				fmt.Println("Message sent:", ev.TopicPartition)
+				// save on some database that the message was sent with success.
+				// ex: confirm that a bank transfer was done.
+			}
+		}
+	}
 }
